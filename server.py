@@ -1,13 +1,111 @@
 import os
-import requests
-from flask import Flask, render_template_string, request, make_response
 import io
 import csv
-import re
+import requests
+from flask import Flask, request, render_template_string, make_response
 
 app = Flask(__name__)
 
-API_KEY = os.environ.get("YOUTUBE_API_KEY", "YOUR_API_KEY")
+# Fetch API key from environment variable (secure practice) or fallback string
+API_KEY = os.environ.get("YOUTUBE_API_KEY", "YOUR_API_KEY_HERE")
+
+def parse_duration(iso_duration):
+    """Converts YouTube ISO 8601 duration (e.g., PT1H2M10S) to HH:MM:SS format."""
+    import re
+    match = re.match(r'PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?', iso_duration)
+    if not match:
+        return "00:00:00"
+    
+    hours = int(match.group(1)) if match.group(1) else 0
+    minutes = int(match.group(2)) if match.group(2) else 0
+    seconds = int(match.group(3)) if match.group(3) else 0
+
+    if hours > 0:
+        return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+    else:
+        return f"{minutes:02d}:{seconds:02d}"
+
+def fetch_playlist_title(playlist_id):
+    """Safely fetches the playlist title from YouTube API."""
+    url = f"https://www.googleapis.com/youtube/v3/playlists?part=snippet&id={playlist_id}&key={API_KEY}"
+    try:
+        response = requests.get(url, timeout=10)
+        if response.status_code == 200:
+            items = response.json().get("items", [])
+            if items:
+                return items[0].get("snippet", {}).get("title", f"Playlist_{playlist_id}")
+    except Exception:
+        pass
+    return f"Playlist_{playlist_id}"
+
+def fetch_playlist_as_csv_data(playlist_id):
+    """Fetches all items from a playlist with full pagination support."""
+    videos = []
+    next_page_token = ""
+    
+    while True:
+        url = (
+            f"https://www.googleapis.com/youtube/v3/playlistItems"
+            f"?part=snippet,contentDetails&maxResults=50&playlistId={playlist_id}&key={API_KEY}"
+        )
+        if next_page_token:
+            url += f"&pageToken={next_page_token}"
+            
+        try:
+            response = requests.get(url, timeout=15)
+            if response.status_code != 200:
+                break
+                
+            data = response.json()
+            items = data.get("items", [])
+            
+            if not items:
+                break
+
+            video_ids = []
+            item_map = {}
+            
+            for item in items:
+                snippet = item.get("snippet", {})
+                title = snippet.get("title", "")
+                
+                # Skip deleted or private placeholders to prevent clutter
+                if title in ["[Private video]", "[Deleted video]"]:
+                    continue
+                    
+                resource_id = snippet.get("resourceId", {})
+                vid_id = resource_id.get("videoId")
+                if vid_id:
+                    video_ids.append(vid_id)
+                    item_map[vid_id] = title
+
+            if video_ids:
+                # Fetch durations in batches of 50
+                dur_url = (
+                    f"https://www.googleapis.com/youtube/v3/videos"
+                    f"?part=contentDetails&id={','.join(video_ids)}&key={API_KEY}"
+                )
+                dur_response = requests.get(dur_url, timeout=15)
+                if dur_response.status_code == 200:
+                    for vid_item in dur_response.json().get("items", []):
+                        vid_id = vid_item.get("id")
+                        iso_dur = vid_item.get("contentDetails", {}).get("duration", "PT0S")
+                        formatted_dur = parse_duration(iso_dur)
+                        title = item_map.get(vid_id, "Unknown Title")
+                        videos.append((title, formatted_dur))
+
+            next_page_token = data.get("nextPageToken")
+            if not next_page_token:
+                break
+        except Exception:
+            break
+
+    # Format into rows with serial numbers
+    csv_rows = []
+    for index, (title, duration) in enumerate(videos, start=1):
+        csv_rows.append([index, title, duration])
+        
+    return csv_rows
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -157,7 +255,8 @@ HTML_TEMPLATE = """
 </body>
 </html>
 """
-@app.route("/", methods=["GET"])
+
+@app.route("/")
 def index():
     return render_template_string(HTML_TEMPLATE)
 
@@ -167,16 +266,12 @@ def generate():
     if not playlist_id:
         return "Playlist ID is required", 400
 
-    # Fetch playlist title safely and encode to ASCII to avoid header crashes
+    # Sanitize dynamic title for safe HTTP headers
     playlist_title = fetch_playlist_title(playlist_id)
-    
-    # Clean up special characters and convert to safe ASCII bytes for the header
     safe_filename = "".join(c for c in playlist_title if c.isalnum() or c in (' ', '_', '-')).strip()
     if not safe_filename:
         safe_filename = f"YouTube_Playlist_{playlist_id}"
     safe_filename = safe_filename.replace(' ', '_')
-    
-    # Encode strictly to ASCII, replacing any rogue unicode characters
     safe_filename = safe_filename.encode('ascii', 'ignore').decode('ascii')
     if not safe_filename:
         safe_filename = f"Playlist_{playlist_id}"
@@ -191,93 +286,14 @@ def generate():
     for row in csv_data:
         writer.writerow(row)
 
-    response = make_response(output.getvalue())
+    # Encode with UTF-8 BOM so Excel opens diacritics and symbols cleanly
+    csv_bytes = output.getvalue().encode('utf-8-sig')
+
+    response = make_response(csv_bytes)
     response.headers["Content-Disposition"] = f"attachment; filename=\"{filename}\""
-    response.headers["Content-Type"] = "text/csv"
+    response.headers["Content-Type"] = "text/csv; charset=utf-8"
     return response
 
-def fetch_playlist_title(playlist_id):
-    url = f"https://www.googleapis.com/youtube/v3/playlists?part=snippet&id={playlist_id}&key={API_KEY}"
-    response = requests.get(url)
-    if response.status_code == 200:
-        items = response.json().get("items", [])
-        if items:
-            return items[0].get("snippet", {}).get("title", f"Playlist_{playlist_id}")
-    return f"Playlist_{playlist_id}"
-
-def fetch_playlist_as_csv_data(playlist_id):
-    next_page_token = ""
-    serial_no = 1
-    all_items = []
-    session = requests.Session()
-
-    while True:
-        url = f"https://www.googleapis.com/youtube/v3/playlistItems?part=snippet,contentDetails&maxResults=50&playlistId={playlist_id}&key={API_KEY}"
-        if next_page_token:
-            url += f"&pageToken={next_page_token}"
-
-        response = session.get(url)
-        if response.status_code != 200:
-            break
-
-        data = response.json()
-        items = data.get("items", [])
-        
-        video_ids = []
-        video_titles = []
-
-        for item in items:
-            snippet = item.get("snippet", {})
-            title = snippet.get("title", "")
-            resource_id = snippet.get("resourceId", {})
-            vid_id = resource_id.get("videoId")
-
-            if title and title not in ["Private video", "Deleted video"] and vid_id:
-                video_ids.append(vid_id)
-                video_titles.append(title)
-
-        durations = fetch_video_durations(session, video_ids)
-
-        for i in range(len(video_ids)):
-            dur = durations[i] if i < len(durations) else "0:00"
-            all_items.append([serial_no, video_titles[i], dur])
-            serial_no += 1
-
-        next_page_token = data.get("nextPageToken")
-        if not next_page_token:
-            break
-
-    return all_items
-
-def fetch_video_durations(session, video_ids):
-    if not video_ids:
-        return []
-    
-    url = f"https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id={','.join(video_ids)}&key={API_KEY}"
-    response = session.get(url)
-    duration_map = {}
-
-    if response.status_code == 200:
-        for item in response.json().get("items", []):
-            vid = item.get("id")
-            iso = item.get("contentDetails", {}).get("duration", "")
-            duration_map[vid] = convert_iso_to_readable(iso)
-
-    return [duration_map.get(vid, "0:00") for vid in video_ids]
-
-def convert_iso_to_readable(iso):
-    match = re.match(r'PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?', iso)
-    if not match:
-        return "0:00"
-    h, m, s = match.groups()
-    hours = int(h) if h else 0
-    minutes = int(m) if m else 0
-    seconds = int(s) if s else 0
-
-    if hours > 0:
-        return f"{hours}:{minutes:02d}:{seconds:02d}"
-    return f"{minutes}:{seconds:02d}"
-
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
+    port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
