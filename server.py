@@ -17,129 +17,100 @@ HTML_TEMPLATE = """
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>YouTube Playlist Exporter</title>
     <style>
-        /* Basic Reset */
         * { box-sizing: border-box; margin: 0; padding: 0; }
 
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            /* Background Image: ISKCON Vrindavan (Krishna Balaram Mandir) */
-            background: url('https://upload.wikimedia.org/wikipedia/commons/1/1f/ISKCON_Vrindavan_front_view.jpg') no-repeat center center fixed;
-            background-size: cover;
+            /* Rich warm devotional gradient background: Deep Maroon to Saffron */
+            background: linear-gradient(135deg, #4a0e0e 0%, #b33900 50%, #ff8c00 100%);
             height: 100vh;
             display: flex;
             justify-content: center;
             align-items: center;
-            position: relative;
-        }
-
-        /* Overlay to ensure text is readable against the background */
-        body::before {
-            content: "";
-            position: absolute;
-            top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0, 0, 0, 0.5); /* Dark overlay */
         }
 
         .main-container {
-            position: relative; /* Sits on top of the overlay */
-            z-index: 1;
             width: 100%;
-            max-width: 450px;
+            max-width: 440px;
             padding: 20px;
         }
 
         .card {
-            background: rgba(255, 255, 255, 0.95); /* Semi-transparent white card */
+            background: rgba(255, 255, 255, 0.98);
             padding: 40px 30px;
-            border-radius: 15px;
-            box-shadow: 0 8px 30px rgba(0,0,0,0.3);
+            border-radius: 16px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
             text-align: center;
-            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-top: 5px solid #ff8c00; /* Saffron top border accent */
         }
 
         h2 {
-            color: #1a1a1a;
-            margin-bottom: 10px;
-            font-size: 28px;
+            color: #2c1d0c;
+            margin-bottom: 8px;
+            font-size: 26px;
             font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 1px;
+            letter-spacing: 0.5px;
         }
 
         p {
             color: #555;
             margin-bottom: 25px;
-            font-size: 16px;
+            font-size: 15px;
             line-height: 1.5;
         }
 
-        /* Optional: A small decorative element */
         .divider {
-            width: 50px;
+            width: 40px;
             height: 3px;
-            background: #ff8c00; /* Saffron color */
+            background: #ff8c00;
             margin: 0 auto 20px auto;
             border-radius: 2px;
         }
 
         input[type="text"] {
             width: 100%;
-            padding: 15px;
+            padding: 14px;
             margin-bottom: 20px;
             border: 2px solid #e0e0e0;
             border-radius: 8px;
-            font-size: 16px;
-            transition: border-color 0.3s;
+            font-size: 15px;
+            transition: all 0.3s ease;
         }
 
         input[type="text"]:focus {
             outline: none;
             border-color: #ff8c00;
+            box-shadow: 0 0 8px rgba(255, 140, 0, 0.2);
         }
 
         button {
-            background: linear-gradient(45deg, #ff8c00, #ff5722); /* Saffron gradient */
+            background: linear-gradient(135deg, #ff8c00 0%, #e65100 100%);
             color: white;
             border: none;
-            padding: 15px 30px;
+            padding: 14px 20px;
             width: 100%;
             border-radius: 8px;
-            font-size: 18px;
+            font-size: 16px;
             font-weight: bold;
             cursor: pointer;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            transition: background 0.3s, transform 0.1s;
-            box-shadow: 0 4px 15px rgba(255, 140, 0, 0.4);
+            letter-spacing: 0.5px;
+            transition: transform 0.1s ease, box-shadow 0.2s ease;
+            box-shadow: 0 4px 15px rgba(230, 81, 0, 0.4);
         }
 
         button:hover {
-            background: linear-gradient(45deg, #ff5722, #ff8c00);
+            box-shadow: 0 6px 20px rgba(230, 81, 0, 0.6);
         }
 
         button:active {
-            transform: scale(0.98); /* Little click effect */
+            transform: scale(0.98);
         }
 
-        /* Footer Credit */
         .footer-credit {
-            position: absolute;
-            bottom: 10px;
-            width: 100%;
-            text-align: center;
-            color: rgba(255, 255, 255, 0.7);
-            font-size: 12px;
-            z-index: 1;
-        }
-        .footer-credit a {
-            color: #ff8c00;
-            text-decoration: none;
-        }
-
-        /* Responsive adjustments */
-        @media (max-width: 500px) {
-            .card { padding: 30px 20px; }
-            h2 { font-size: 24px; }
+            margin-top: 20px;
+            font-size: 13px;
+            color: #777;
+            letter-spacing: 0.3px;
         }
     </style>
 </head>
@@ -147,19 +118,19 @@ HTML_TEMPLATE = """
 
     <div class="main-container">
         <div class="card">
-            <h2>Exporter</h2>
+            <h2>YouTube Playlist Exporter</h2>
             <div class="divider"></div>
-            <p>Paste your YouTube Playlist ID below to download the lecture list as an Excel/CSV file.</p>
+            <p>Paste your YouTube Playlist ID below to download your lecture list as a neat spreadsheet.</p>
             
             <form action="/generate" method="POST">
-                <input type="text" name="playlist_id" placeholder="e.g., PLU9rqx... (Paste ID here)" required autocomplete="off">
+                <input type="text" name="playlist_id" placeholder="Paste Playlist ID here..." required autocomplete="off">
                 <button type="submit">Download Spreadsheet</button>
             </form>
-        </div>
-    </div>
 
-    <div class="footer-credit">
-        Serving the Vaishnava Community | Powered by Flask & YouTube API
+            <div class="footer-credit">
+                Hare Krishna | Serving the Community
+            </div>
+        </div>
     </div>
 
 </body>
