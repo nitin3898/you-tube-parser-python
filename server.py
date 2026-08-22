@@ -21,7 +21,7 @@ HTML_TEMPLATE = """
 
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #2b0902 0%, #9c3800 60%, #e65100 100%);
+            background: linear-gradient(145deg, #380404 0%, #8b2500 50%, #d96b00 100%);
             min-height: 100vh;
             display: flex;
             justify-content: center;
@@ -31,73 +31,64 @@ HTML_TEMPLATE = """
 
         .main-container {
             width: 100%;
-            max-width: 440px;
+            max-width: 460px;
         }
 
         .card {
-            background: #ffffff;
-            padding: 30px;
-            border-radius: 20px;
-            box-shadow: 0 15px 35px rgba(0,0,0,0.4);
+            background: #fffdf9;
+            padding: 40px 35px;
+            border-radius: 24px;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.4);
             text-align: center;
-            border: 2px solid #ffd700; /* Golden border */
+            border: 2px solid #e6b800;
+            position: relative;
         }
 
-        /* Deity Image Container */
-        .deity-container {
-            width: 100px;
-            height: 100px;
-            margin: 0 auto 15px auto;
+        .sacred-emblem {
+            width: 64px;
+            height: 64px;
+            background: linear-gradient(135deg, #ff8c00, #ffcc00);
             border-radius: 50%;
-            overflow: hidden;
-            border: 3px solid #ff8c00;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.2);
-        }
-
-        .deity-container img {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
+            margin: 0 auto 20px auto;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 30px;
+            box-shadow: 0 6px 15px rgba(230, 140, 0, 0.4);
+            border: 2px solid #fff;
         }
 
         h2 {
-            color: #3e1f04;
-            margin-bottom: 5px;
-            font-size: 24px;
+            color: #3b1402;
+            font-size: 26px;
             font-weight: 700;
-        }
-
-        .subtitle {
-            font-size: 13px;
-            color: #b33900;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 1.5px;
+            letter-spacing: 0.5px;
             margin-bottom: 15px;
         }
 
-        p {
-            color: #666;
-            margin-bottom: 20px;
-            font-size: 14px;
-            line-height: 1.5;
+        .divider-line {
+            width: 80px;
+            height: 3px;
+            background: linear-gradient(90deg, transparent, #ff8c00, transparent);
+            margin: 0 auto 20px auto;
         }
 
-        .divider {
-            width: 60px;
-            height: 3px;
-            background: #ff8c00;
-            margin: 0 auto 20px auto;
-            border-radius: 2px;
+        p {
+            color: #555555;
+            margin-bottom: 25px;
+            font-size: 15px;
+            line-height: 1.6;
         }
 
         input[type="text"] {
             width: 100%;
-            padding: 14px;
+            padding: 15px 18px;
             margin-bottom: 20px;
-            border: 2px solid #e0e0e0;
-            border-radius: 8px;
+            border: 2px solid #e2d6c8;
+            background: #ffffff;
+            border-radius: 10px;
             font-size: 15px;
+            color: #333;
             transition: all 0.3s ease;
             text-align: center;
         }
@@ -105,22 +96,27 @@ HTML_TEMPLATE = """
         input[type="text"]:focus {
             outline: none;
             border-color: #ff8c00;
-            box-shadow: 0 0 8px rgba(255, 140, 0, 0.3);
+            box-shadow: 0 0 10px rgba(255, 140, 0, 0.25);
+            background: #fff;
         }
 
         button {
-            background: linear-gradient(135deg, #ff8c00 0%, #d84315 100%);
+            background: linear-gradient(135deg, #ff8c00 0%, #cc3300 100%);
             color: white;
             border: none;
-            padding: 14px 20px;
+            padding: 15px 20px;
             width: 100%;
-            border-radius: 8px;
+            border-radius: 10px;
             font-size: 16px;
-            font-weight: bold;
+            font-weight: 700;
             cursor: pointer;
             letter-spacing: 0.5px;
-            box-shadow: 0 4px 15px rgba(216, 67, 21, 0.4);
-            transition: transform 0.1s ease;
+            box-shadow: 0 6px 20px rgba(204, 51, 0, 0.35);
+            transition: transform 0.1s ease, box-shadow 0.2s ease;
+        }
+
+        button:hover {
+            box-shadow: 0 8px 25px rgba(204, 51, 0, 0.5);
         }
 
         button:active {
@@ -128,10 +124,11 @@ HTML_TEMPLATE = """
         }
 
         .footer-credit {
-            margin-top: 20px;
+            margin-top: 25px;
             font-size: 13px;
-            color: #888;
-            font-style: italic;
+            color: #886040;
+            font-weight: 600;
+            letter-spacing: 0.5px;
         }
     </style>
 </head>
@@ -139,15 +136,12 @@ HTML_TEMPLATE = """
 
     <div class="main-container">
         <div class="card">
-            <!-- Circular Deity Picture Frame -->
-            <div class="deity-container">
-                <img src="https://images.unsplash.com/photo-1609137144813-772c55f75608?auto=format&fit=crop&w=300&q=80" alt="Sri Krishna">
-            </div>
+            <div class="sacred-emblem">🪷</div>
             
-            <h2>Lecture Exporter</h2>
-            <div class="subtitle">Gaudiya Vaishnava Seva</div>
-            <div class="divider"></div>
-            <p>Paste your YouTube Playlist ID below to download your lecture spreadsheet.</p>
+            <h2>YouTube Playlist Exporter</h2>
+            <div class="divider-line"></div>
+            
+            <p>Paste your YouTube Playlist ID below to cleanly download your lecture schedule as an Excel spreadsheet.</p>
             
             <form action="/generate" method="POST">
                 <input type="text" name="playlist_id" placeholder="Paste Playlist ID here..." required autocomplete="off">
@@ -155,7 +149,7 @@ HTML_TEMPLATE = """
             </form>
 
             <div class="footer-credit">
-                Hare Krishna | All Glories to Srila Prabhupada
+                Hare Krishna | Serving the Community
             </div>
         </div>
     </div>
