@@ -21,46 +21,70 @@ HTML_TEMPLATE = """
 
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            /* Rich warm devotional gradient background: Deep Maroon to Saffron */
-            background: linear-gradient(135deg, #4a0e0e 0%, #b33900 50%, #ff8c00 100%);
-            height: 100vh;
+            background: linear-gradient(135deg, #2b0902 0%, #9c3800 60%, #e65100 100%);
+            min-height: 100vh;
             display: flex;
             justify-content: center;
             align-items: center;
+            padding: 20px;
         }
 
         .main-container {
             width: 100%;
             max-width: 440px;
-            padding: 20px;
         }
 
         .card {
-            background: rgba(255, 255, 255, 0.98);
-            padding: 40px 30px;
-            border-radius: 16px;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+            background: #ffffff;
+            padding: 30px;
+            border-radius: 20px;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.4);
             text-align: center;
-            border-top: 5px solid #ff8c00; /* Saffron top border accent */
+            border: 2px solid #ffd700; /* Golden border */
+        }
+
+        /* Deity Image Container */
+        .deity-container {
+            width: 100px;
+            height: 100px;
+            margin: 0 auto 15px auto;
+            border-radius: 50%;
+            overflow: hidden;
+            border: 3px solid #ff8c00;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+        }
+
+        .deity-container img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
         }
 
         h2 {
-            color: #2c1d0c;
-            margin-bottom: 8px;
-            font-size: 26px;
+            color: #3e1f04;
+            margin-bottom: 5px;
+            font-size: 24px;
             font-weight: 700;
-            letter-spacing: 0.5px;
+        }
+
+        .subtitle {
+            font-size: 13px;
+            color: #b33900;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            margin-bottom: 15px;
         }
 
         p {
-            color: #555;
-            margin-bottom: 25px;
-            font-size: 15px;
+            color: #666;
+            margin-bottom: 20px;
+            font-size: 14px;
             line-height: 1.5;
         }
 
         .divider {
-            width: 40px;
+            width: 60px;
             height: 3px;
             background: #ff8c00;
             margin: 0 auto 20px auto;
@@ -75,16 +99,17 @@ HTML_TEMPLATE = """
             border-radius: 8px;
             font-size: 15px;
             transition: all 0.3s ease;
+            text-align: center;
         }
 
         input[type="text"]:focus {
             outline: none;
             border-color: #ff8c00;
-            box-shadow: 0 0 8px rgba(255, 140, 0, 0.2);
+            box-shadow: 0 0 8px rgba(255, 140, 0, 0.3);
         }
 
         button {
-            background: linear-gradient(135deg, #ff8c00 0%, #e65100 100%);
+            background: linear-gradient(135deg, #ff8c00 0%, #d84315 100%);
             color: white;
             border: none;
             padding: 14px 20px;
@@ -94,12 +119,8 @@ HTML_TEMPLATE = """
             font-weight: bold;
             cursor: pointer;
             letter-spacing: 0.5px;
-            transition: transform 0.1s ease, box-shadow 0.2s ease;
-            box-shadow: 0 4px 15px rgba(230, 81, 0, 0.4);
-        }
-
-        button:hover {
-            box-shadow: 0 6px 20px rgba(230, 81, 0, 0.6);
+            box-shadow: 0 4px 15px rgba(216, 67, 21, 0.4);
+            transition: transform 0.1s ease;
         }
 
         button:active {
@@ -109,8 +130,8 @@ HTML_TEMPLATE = """
         .footer-credit {
             margin-top: 20px;
             font-size: 13px;
-            color: #777;
-            letter-spacing: 0.3px;
+            color: #888;
+            font-style: italic;
         }
     </style>
 </head>
@@ -118,9 +139,15 @@ HTML_TEMPLATE = """
 
     <div class="main-container">
         <div class="card">
-            <h2>YouTube Playlist Exporter</h2>
+            <!-- Circular Deity Picture Frame -->
+            <div class="deity-container">
+                <img src="https://images.unsplash.com/photo-1609137144813-772c55f75608?auto=format&fit=crop&w=300&q=80" alt="Sri Krishna">
+            </div>
+            
+            <h2>Lecture Exporter</h2>
+            <div class="subtitle">Gaudiya Vaishnava Seva</div>
             <div class="divider"></div>
-            <p>Paste your YouTube Playlist ID below to download your lecture list as a neat spreadsheet.</p>
+            <p>Paste your YouTube Playlist ID below to download your lecture spreadsheet.</p>
             
             <form action="/generate" method="POST">
                 <input type="text" name="playlist_id" placeholder="Paste Playlist ID here..." required autocomplete="off">
@@ -128,7 +155,7 @@ HTML_TEMPLATE = """
             </form>
 
             <div class="footer-credit">
-                Hare Krishna | Serving the Community
+                Hare Krishna | All Glories to Srila Prabhupada
             </div>
         </div>
     </div>
@@ -136,7 +163,6 @@ HTML_TEMPLATE = """
 </body>
 </html>
 """
-
 @app.route("/", methods=["GET"])
 def index():
     return render_template_string(HTML_TEMPLATE)
