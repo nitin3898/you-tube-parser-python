@@ -45,6 +45,13 @@ def generate():
     if not playlist_id:
         return "Playlist ID is required", 400
 
+    # Fetch playlist title dynamically for the filename
+    playlist_title = fetch_playlist_title(playlist_id)
+    safe_filename = "".join(c for c in playlist_title if c.isalnum() or c in (' ', '_', '-')).strip()
+    if not safe_filename:
+        safe_filename = f"YouTube_Playlist_{playlist_id}"
+    safe_filename = safe_filename.replace(' ', '_') + ".csv"
+
     csv_data = fetch_playlist_as_csv_data(playlist_id)
     
     output = io.StringIO()
@@ -54,9 +61,18 @@ def generate():
         writer.writerow(row)
 
     response = make_response(output.getvalue())
-    response.headers["Content-Disposition"] = "attachment; filename=\"Ranganath_Pastimes.csv\""
+    response.headers["Content-Disposition"] = f"attachment; filename=\"{safe_filename}\""
     response.headers["Content-Type"] = "text/csv"
     return response
+
+def fetch_playlist_title(playlist_id):
+    url = f"https://www.googleapis.com/youtube/v3/playlists?part=snippet&id={playlist_id}&key={API_KEY}"
+    response = requests.get(url)
+    if response.status_code == 200:
+        items = response.json().get("items", [])
+        if items:
+            return items[0].get("snippet", {}).get("title", f"Playlist_{playlist_id}")
+    return f"Playlist_{playlist_id}"
 
 def fetch_playlist_as_csv_data(playlist_id):
     next_page_token = ""
