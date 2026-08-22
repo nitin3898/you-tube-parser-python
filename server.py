@@ -11,26 +11,157 @@ API_KEY = os.environ.get("YOUTUBE_API_KEY", "YOUR_API_KEY")
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <meta name='viewport' content='width=device-width, initial-scale=1.0'>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>YouTube Playlist Exporter</title>
     <style>
-        body { font-family: sans-serif; background: #f4f6f9; padding: 20px; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
-        .card { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.08); width: 100%; max-width: 400px; text-align: center; }
-        input { width: 100%; padding: 12px; box-sizing: border-box; border: 1px solid #ddd; border-radius: 6px; font-size: 16px; margin-bottom: 15px; }
-        button { background: #0066cc; color: white; border: none; padding: 12px; width: 100%; border-radius: 6px; font-size: 16px; font-weight: bold; cursor: pointer; }
+        /* Basic Reset */
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            /* Background Image: ISKCON Vrindavan (Krishna Balaram Mandir) */
+            background: url('https://upload.wikimedia.org/wikipedia/commons/1/1f/ISKCON_Vrindavan_front_view.jpg') no-repeat center center fixed;
+            background-size: cover;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+        }
+
+        /* Overlay to ensure text is readable against the background */
+        body::before {
+            content: "";
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.5); /* Dark overlay */
+        }
+
+        .main-container {
+            position: relative; /* Sits on top of the overlay */
+            z-index: 1;
+            width: 100%;
+            max-width: 450px;
+            padding: 20px;
+        }
+
+        .card {
+            background: rgba(255, 255, 255, 0.95); /* Semi-transparent white card */
+            padding: 40px 30px;
+            border-radius: 15px;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.3);
+            text-align: center;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+
+        h2 {
+            color: #1a1a1a;
+            margin-bottom: 10px;
+            font-size: 28px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        p {
+            color: #555;
+            margin-bottom: 25px;
+            font-size: 16px;
+            line-height: 1.5;
+        }
+
+        /* Optional: A small decorative element */
+        .divider {
+            width: 50px;
+            height: 3px;
+            background: #ff8c00; /* Saffron color */
+            margin: 0 auto 20px auto;
+            border-radius: 2px;
+        }
+
+        input[type="text"] {
+            width: 100%;
+            padding: 15px;
+            margin-bottom: 20px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+
+        input[type="text"]:focus {
+            outline: none;
+            border-color: #ff8c00;
+        }
+
+        button {
+            background: linear-gradient(45deg, #ff8c00, #ff5722); /* Saffron gradient */
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            width: 100%;
+            border-radius: 8px;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            transition: background 0.3s, transform 0.1s;
+            box-shadow: 0 4px 15px rgba(255, 140, 0, 0.4);
+        }
+
+        button:hover {
+            background: linear-gradient(45deg, #ff5722, #ff8c00);
+        }
+
+        button:active {
+            transform: scale(0.98); /* Little click effect */
+        }
+
+        /* Footer Credit */
+        .footer-credit {
+            position: absolute;
+            bottom: 10px;
+            width: 100%;
+            text-align: center;
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 12px;
+            z-index: 1;
+        }
+        .footer-credit a {
+            color: #ff8c00;
+            text-decoration: none;
+        }
+
+        /* Responsive adjustments */
+        @media (max-width: 500px) {
+            .card { padding: 30px 20px; }
+            h2 { font-size: 24px; }
+        }
     </style>
 </head>
 <body>
-    <div class='card'>
-        <h2>YouTube Playlist Exporter</h2>
-        <p>Paste Playlist ID to download Excel table:</p>
-        <form action='/generate' method='POST'>
-            <input type='text' name='playlist_id' placeholder='Enter Playlist ID' required autocomplete='off'>
-            <button type='submit'>Generate & Download</button>
-        </form>
+
+    <div class="main-container">
+        <div class="card">
+            <h2>Exporter</h2>
+            <div class="divider"></div>
+            <p>Paste your YouTube Playlist ID below to download the lecture list as an Excel/CSV file.</p>
+            
+            <form action="/generate" method="POST">
+                <input type="text" name="playlist_id" placeholder="e.g., PLU9rqx... (Paste ID here)" required autocomplete="off">
+                <button type="submit">Download Spreadsheet</button>
+            </form>
+        </div>
     </div>
+
+    <div class="footer-credit">
+        Serving the Vaishnava Community | Powered by Flask & YouTube API
+    </div>
+
 </body>
 </html>
 """
