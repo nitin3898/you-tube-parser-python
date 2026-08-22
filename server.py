@@ -167,12 +167,21 @@ def generate():
     if not playlist_id:
         return "Playlist ID is required", 400
 
-    # Fetch playlist title dynamically for the filename
+    # Fetch playlist title safely and encode to ASCII to avoid header crashes
     playlist_title = fetch_playlist_title(playlist_id)
+    
+    # Clean up special characters and convert to safe ASCII bytes for the header
     safe_filename = "".join(c for c in playlist_title if c.isalnum() or c in (' ', '_', '-')).strip()
     if not safe_filename:
         safe_filename = f"YouTube_Playlist_{playlist_id}"
-    safe_filename = safe_filename.replace(' ', '_') + ".csv"
+    safe_filename = safe_filename.replace(' ', '_')
+    
+    # Encode strictly to ASCII, replacing any rogue unicode characters
+    safe_filename = safe_filename.encode('ascii', 'ignore').decode('ascii')
+    if not safe_filename:
+        safe_filename = f"Playlist_{playlist_id}"
+    
+    filename = f"{safe_filename}.csv"
 
     csv_data = fetch_playlist_as_csv_data(playlist_id)
     
@@ -183,7 +192,7 @@ def generate():
         writer.writerow(row)
 
     response = make_response(output.getvalue())
-    response.headers["Content-Disposition"] = f"attachment; filename=\"{safe_filename}\""
+    response.headers["Content-Disposition"] = f"attachment; filename=\"{filename}\""
     response.headers["Content-Type"] = "text/csv"
     return response
 
