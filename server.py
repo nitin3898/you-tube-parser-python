@@ -2,6 +2,8 @@ import os
 import io
 import csv
 import re
+import glob
+import subprocess
 import requests
 from flask import Flask, request, render_template_string, make_response
 
@@ -251,58 +253,39 @@ def generate_transcript():
         return "Video ID or URL is required", 400
 
     try:
-        # Expanded pool of active public Piped API instances
-        proxy_apis = [
-            f"https://pipedapi.kavin.rocks/streams/{video_id}",
-            f"https://pipedapi.leptons.xyz/streams/{video_id}",
-            f"https://piped-api.privacy.com.de/streams/{video_id}",
-            f"https://pipedapi.adminforge.de/streams/{video_id}",
-            f"https://api.piped.yt/streams/{video_id}",
-            f"https://api.piped.private.coffee/streams/{video_id}"
+        sub_base_name = f"/tmp/transcript_{video_id}"
+        cmd = [
+            "yt-dlp",
+            "--skip-download",
+            "--write-subs",
+            "--write-auto-subs",
+            "--sub-langs", f"{lang},en",
+            "--sub-format", "vtt",
+            "-o", sub_base_name,
+            f"https://www.youtube.com/watch?v={video_id}"
         ]
         
-        data = None
-        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+        subprocess.run(cmd, capture_output=True, text=True, timeout=25)
         
-        for api_url in proxy_apis:
+        vtt_files = glob.glob(f"{sub_base_name}*.vtt")
+        if not vtt_files:
+            raise Exception("No subtitle tracks could be found or extracted for this video.")
+
+        with open(vtt_files[0], "r", encoding="utf-8", errors="ignore") as f:
+            vtt_text = f.read()
+            
+        for f_path in vtt_files:
             try:
-                resp = requests.get(api_url, headers=headers, timeout=8)
-                if resp.status_code == 200:
-                    data = resp.json()
-                    break
+                os.remove(f_path)
             except Exception:
-                continue
+                pass
 
-        if not data:
-            raise Exception("All public proxy instances are currently busy or offline.")
-
-        subtitles = data.get("subtitles", [])
-        target_sub_url = None
-        selected_lang_code = lang
-        
-        for sub in subtitles:
-            if sub.get("code") == lang:
-                target_sub_url = sub.get("url")
-                break
-                
-        if not target_sub_url and subtitles:
-            target_sub_url = subtitles[0].get("url")
-            selected_lang_code = subtitles[0].get("code", lang)
-
-        if not target_sub_url:
-            raise Exception("This video does not have available caption tracks.")
-
-        sub_resp = requests.get(target_sub_url, headers=headers, timeout=8)
-        if sub_resp.status_code != 200:
-            raise Exception("Failed to download the subtitle payload file.")
-
-        vtt_text = sub_resp.text
-        output_lines = [f"--- YOUTUBE VIDEO TRANSCRIPT ({selected_lang_code.upper()}) ---"]
+        output_lines = [f"--- YOUTUBE VIDEO TRANSCRIPT ({lang.upper()}) ---"]
         seen_lines = set()
         
         for line in vtt_text.splitlines():
             line = line.strip()
-            if "-->" in line or line.startswith("WEBVTT") or line.isdigit() or not line:
+            if "-->" in line or line.startswith("WEBVTT") or line.isdigit() or not line or "NOTE" in line:
                 continue
             
             clean_line = re.sub(r'<[^>]+>', '', line)
@@ -315,14 +298,14 @@ def generate_transcript():
 
         final_text = "\n".join(output_lines)
         response = make_response(final_text)
-        response.headers["Content-Disposition"] = f"attachment; filename=\"Transcript_{video_id}_{selected_lang_code}.txt\""
+        response.headers["Content-Disposition"] = f"attachment; filename=\"Transcript_{video_id}_{lang}.txt\""
         response.headers["Content-Type"] = "text/plain; charset=utf-8"
         return response
 
     except Exception as e:
         return render_template_string(f"""
             <body style="font-family:sans-serif; text-align:center; padding:50px; background:#fffdf9;">
-                <h2 style="color:#b30000;">Transcript Retrieval Failed</h2>
+                <h2 style="color:#b30000;">Transcript Extraction Failed</h2>
                 <p style="color:#555;">Details: {str(e)}</p>
                 <a href="/" style="display:inline-block; margin-top:20px; padding:10px 20px; background:#ff8c00; color:#fff; text-decoration:none; border-radius:8px;">Back to Home</a>
             </body>
