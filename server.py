@@ -251,75 +251,66 @@ def generate_transcript():
     if not video_id:
         return "Video ID or URL is required", 400
 
-    video_url = f"https://www.youtube.com/watch?v={video_id}"
-    
-    # Configure yt-dlp to extract subtitles metadata without downloading media
-    ydl_opts = {
-        'skip_download': True,
-        'writesubtitles': True,
-        'writeautomaticsub': True,
-        'subtitleslangs': [lang, 'en', 'hi'],
-    }
-
-    subtitles_data = None
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(video_url, download=False)
-            
-            # Check requested language subtitles first, then automatic captions
-            subs = info.get('requested_subtitles') or info.get('subtitles') or info.get('automatic_captions')
-            
-            if subs:
-                # Find best matching subtitle JSON format url
-                target_sub = None
-                if lang in subs:
-                    target_sub = subs[lang]
-                else:
-                    for k in subs:
-                        if subs[k]:
-                            target_sub = subs[k]
-                            break
-                
-                if target_sub:
-                    # yt-dlp provides formats like 'json3' or 'vtt'
-                    formats = target_sub if isinstance(target_sub, list) else [target_sub]
-                    sub_url = None
-                    for fmt in formats:
-                        if fmt.get('ext') == 'json3':
-                            sub_url = fmt.get('url')
-                            break
-                    if not sub_url and formats:
-                        sub_url = formats[0].get('url')
-
-                    if sub_url:
-                        sub_resp = requests.get(sub_url, timeout=15)
-                        if sub_resp.status_code == 200:
-                            subtitles_data = sub_resp.json()
-
-        if not subtitles_data or 'events' not in subtitles_data:
-            raise Exception("No subtitle events found.")
-
-        events = subtitles_data.get('events', [])
-        output_lines = [f"--- YOUTUBE VIDEO TRANSCRIPT ({lang.upper()}) ---"]
+        # Use a reliable public Piped API instance to fetch captions cleanly without bot checks
+        piped_url = f"https://pipedapi.kavin.rocks/streams/{video_id}"
+        headers = {"User-Agent": "Mozilla/5.0"}
+        resp = requests.get(piped_url, headers=headers, timeout=15)
         
-        for event in events:
-            if 'segs' in event:
-                start_ms = event.get('tStartMs', 0)
-                total_seconds = int(start_ms) // 1000
-                minutes = total_seconds // 60
-                seconds = total_seconds % 60
-                timestamp_str = f"[{minutes:02d}:{seconds:02d}]"
+        if resp.status_code != 200:
+            raise Exception("Could not reach Piped API.")
+            
+        data = resp.json()
+        subtitles = data.get("subtitles", [])
+        
+        target_sub_url = None
+        selected_lang_code = lang
+        
+        # Look for matching language subtitle
+        for sub in subtitles:
+            if sub.get("code") == lang:
+                target_sub_url = sub.get("url")
+                break
                 
-                text_chunk = "".join([seg.get('utf8', '') for seg in event['segs']]).strip()
-                if text_chunk and text_chunk != '\n':
-                    output_lines.append(f"{timestamp_str} {text_chunk}")
+        # Fallback to any available subtitle if preferred language isn't found
+        if not target_sub_url and subtitles:
+            target_sub_url = subtitles[0].get("url")
+            selected_lang_code = subtitles[0].get("code", lang)
+
+        if not target_sub_url:
+            raise Exception("No subtitles found via Piped API.")
+
+        # Download the subtitle file (usually in VTT format)
+        sub_resp = requests.get(target_sub_url, headers=headers, timeout=15)
+        if sub_resp.status_code != 200:
+            raise Exception("Failed to download subtitle file content.")
+
+        vtt_text = sub_resp.text
+        
+        # Parse VTT format into clean timestamps and text lines
+        output_lines = [f"--- YOUTUBE VIDEO TRANSCRIPT ({selected_lang_code.upper()}) ---"]
+        seen_lines = set()
+        
+        for line in vtt_text.splitlines():
+            line = line.strip()
+            # VTT timestamps look like "00:01.000 --> 00:04.000" or contain formatting tags
+            if "-->" in line:
+                continue
+            if line.startswith("WEBVTT") or line.isdigit() or not line:
+                continue
+            
+            # Clean HTML-like tags if present
+            clean_line = re.sub(r'<[^>]+>', '', line)
+            if clean_line and clean_line not in seen_lines:
+                seen_lines.add(clean_line)
+                output_lines.append(clean_line)
 
         if len(output_lines) <= 1:
             raise Exception("Empty transcript parsed.")
 
         final_text = "\n".join(output_lines)
         response = make_response(final_text)
-        response.headers["Content-Disposition"] = f"attachment; filename=\"Transcript_{video_id}_{lang}.txt\""
+        response.headers["Content-Disposition"] = f"attachment; filename=\"Transcript_{video_id}_{selected_lang_code}.txt\""
         response.headers["Content-Type"] = "text/plain; charset=utf-8"
         return response
 
@@ -327,11 +318,10 @@ def generate_transcript():
         return render_template_string("""
             <body style="font-family:sans-serif; text-align:center; padding:50px; background:#fffdf9;">
                 <h2 style="color:#b30000;">No captions found for this video.</h2>
-                <p style="color:#555;">YouTube closed captions or auto-generated transcripts could not be extracted for this video ID.</p>
+                <p style="color:#555;">Captions could not be retrieved for this video ID.</p>
                 <a href="/" style="display:inline-block; margin-top:20px; padding:10px 20px; background:#ff8c00; color:#fff; text-decoration:none; border-radius:8px;">Back to Home</a>
             </body>
         """), 404
-
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
