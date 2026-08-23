@@ -2,9 +2,9 @@ import os
 import io
 import csv
 import re
+import json
 import requests
 from flask import Flask, request, render_template_string, make_response
-from youtube_transcript_api import YouTubeTranscriptApi
 
 app = Flask(__name__)
 
@@ -94,7 +94,6 @@ def extract_video_id(input_str):
     if len(input_str) == 11 and " " not in input_str:
         return input_str
     
-    # Match standard patterns like watch?v=ID or youtu.be/ID
     patterns = [
         r'(?:v=|\/)([0-9A-Za-z_-]{11}).*',
         r'(?:embed\/)([0-9A-Za-z_-]{11})',
@@ -260,7 +259,6 @@ def index():
 @app.route("/generate-playlist", methods=["POST"])
 def generate_playlist():
     raw_input = request.form.get("playlist_id", "").strip()
-    # Extract ID if a full link was pasted
     playlist_id = raw_input
     if "list=" in raw_input:
         match = re.search(r'list=([a-zA-Z0-9_-]+)', raw_input)
@@ -302,56 +300,94 @@ def generate_transcript():
         return "Video ID or URL is required", 400
 
     try:
-        # Fetch transcript using youtube-transcript-api with language preference fallback
-        # Tries requested language first ('hi' or 'en'), then defaults to available tracks
-        transcript_list = YouTubeTranscriptApi().list(video_id)
+        watch_url = f"https://www.youtube.com/watch?v={video_id}"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept-Language": "en-US,en;q=0.9,hi;q=0.8"
+        }
+        resp = requests.get(watch_url, headers=headers, timeout=15)
+        if resp.status_code != 200:
+            raise Exception("Could not reach YouTube video page.")
         
-        target_transcript = None
-        # Try finding exact match or translated track
-        try:
-            if lang == 'hi':
-                target_transcript = transcript_list.find_transcript(['hi', 'en'])
-            else:
-                target_transcript = transcript_list.find_transcript(['en', 'hi'])
-        except Exception:
-            # Fallback to whatever language is available first
-            for t in transcript_list:
-                target_transcript = t
+        html_content = resp.text
+        caption_tracks = []
+        
+        if '"captions":' in html_content:
+            try:
+                marker = '"captionTracks":'
+                pos = html_content.find(marker)
+                if pos != -1:
+                    start_idx = pos + len(marker)
+                    bracket_count = 0
+                    end_idx = start_idx
+                    for i, char in enumerate(html_content[start_idx:]):
+                        if char == '[':
+                            bracket_count += 1
+                        elif char == ']':
+                            bracket_count -= 1
+                            if bracket_count == 0:
+                                end_idx = start_idx + i + 1
+                                break
+                    tracks_json = json.loads(html_content[start_idx:end_idx])
+                    for track in tracks_json:
+                        caption_tracks.append({
+                            'url': track.get('baseUrl'),
+                            'lang': track.get('languageCode')
+                        })
+            except Exception:
+                pass
+
+        if not caption_tracks:
+            raise Exception("No caption tracks found.")
+
+        selected_url = None
+        selected_lang_code = lang
+        for track in caption_tracks:
+            if track['lang'] == lang:
+                selected_url = track['url']
                 break
+        if not selected_url and caption_tracks:
+            selected_url = caption_tracks[0]['url']
+            selected_lang_code = caption_tracks[0]['lang']
 
-        if not target_transcript:
-            return render_template_string("""
-                <body style="font-family:sans-serif; text-align:center; padding:50px; background:#fffdf9;">
-                    <h2 style="color:#b30000;">No captions found for this video.</h2>
-                    <p style="color:#555;">YouTube does not have closed captions or auto-generated transcripts available for this specific video ID.</p>
-                    <a href="/" style="display:inline-block; margin-top:20px; padding:10px 20px; background:#ff8c00; color:#fff; text-decoration:none; border-radius:8px;">Back to Home</a>
-                </body>
-            """), 404
+        if '&fmt=json3' not in selected_url:
+            selected_url += '&fmt=json3'
 
-        fetched_data = target_transcript.fetch()
+        transcript_resp = requests.get(selected_url, headers=headers, timeout=15)
+        if transcript_resp.status_code != 200:
+            raise Exception("Failed to download caption contents.")
 
-        # Format output cleanly with timestamps
-        output_lines = [f"--- YOUTUBE VIDEO TRANSCRIPT ({target_transcript.language.upper()}) ---"]
-        for entry in fetched_data:
-            start_sec = entry.get('start', 0.0)
-            minutes = int(start_sec // 60)
-            seconds = int(start_sec % 60)
-            timestamp_str = f"[{minutes:02d}:{seconds:02d}]"
-            text = entry.get('text', '').replace('\n', ' ')
-            output_lines.append(f"{timestamp_str} {text}")
+        transcript_data = transcript_resp.json()
+        events = transcript_data.get('events', [])
+
+        output_lines = [f"--- YOUTUBE VIDEO TRANSCRIPT ({selected_lang_code.upper()}) ---"]
+        for event in events:
+            if 'segs' in event:
+                start_ms = event.get('tStartMs', 0)
+                total_seconds = int(start_ms) // 1000
+                minutes = total_seconds // 60
+                seconds = total_seconds % 60
+                timestamp_str = f"[{minutes:02d}:{seconds:02d}]"
+                
+                text_chunk = "".join([seg.get('utf8', '') for seg in event['segs']]).strip()
+                if text_chunk and text_chunk != '\n':
+                    output_lines.append(f"{timestamp_str} {text_chunk}")
+
+        if len(output_lines) <= 1:
+            raise Exception("Empty transcript data found.")
 
         final_text = "\n".join(output_lines)
         
         response = make_response(final_text)
-        response.headers["Content-Disposition"] = f"attachment; filename=\"Transcript_{video_id}_{lang}.txt\""
+        response.headers["Content-Disposition"] = f"attachment; filename=\"Transcript_{video_id}_{selected_lang_code}.txt\""
         response.headers["Content-Type"] = "text/plain; charset=utf-8"
         return response
 
-    except Exception as e:
-        return render_template_string(f"""
+    except Exception:
+        return render_template_string("""
             <body style="font-family:sans-serif; text-align:center; padding:50px; background:#fffdf9;">
                 <h2 style="color:#b30000;">No captions found for this video.</h2>
-                <p style="color:#555;">Unable to retrieve captions. (Error details: {str(e)})</p>
+                <p style="color:#555;">YouTube does not have closed captions available or blocked access for this specific video ID.</p>
                 <a href="/" style="display:inline-block; margin-top:20px; padding:10px 20px; background:#ff8c00; color:#fff; text-decoration:none; border-radius:8px;">Back to Home</a>
             </body>
         """), 404
