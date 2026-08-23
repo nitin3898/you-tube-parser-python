@@ -2,16 +2,15 @@ import os
 import io
 import csv
 import re
-import json
 import requests
 from flask import Flask, request, render_template_string, make_response
+import yt_dlp
 
 app = Flask(__name__)
 
 API_KEY = os.environ.get("YOUTUBE_API_KEY", "YOUR_API_KEY_HERE")
 
 def parse_duration(iso_duration):
-    """Converts YouTube ISO 8601 duration to HH:MM:SS format."""
     match = re.match(r'PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?', iso_duration)
     if not match:
         return "00:00:00"
@@ -89,7 +88,6 @@ def fetch_playlist_as_csv_data(playlist_id):
     return [[i, t, d] for i, (t, d) in enumerate(videos, start=1)]
 
 def extract_video_id(input_str):
-    """Extracts standard 11-character video ID from URL or raw ID string."""
     input_str = input_str.strip()
     if len(input_str) == 11 and " " not in input_str:
         return input_str
@@ -123,10 +121,7 @@ HTML_TEMPLATE = """
             align-items: center;
             padding: 20px;
         }
-        .main-container {
-            width: 100%;
-            max-width: 520px;
-        }
+        .main-container { width: 100%; max-width: 520px; }
         .card {
             background: #fffdf9;
             padding: 35px 30px;
@@ -137,106 +132,64 @@ HTML_TEMPLATE = """
             margin-bottom: 20px;
         }
         .sacred-emblem {
-            width: 56px;
-            height: 56px;
+            width: 56px; height: 56px;
             background: linear-gradient(135deg, #ff8c00, #ffcc00);
             border-radius: 50%;
             margin: 0 auto 15px auto;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            font-size: 26px;
-            box-shadow: 0 6px 15px rgba(230, 140, 0, 0.4);
+            display: flex; justify-content: center; align-items: center;
+            font-size: 26px; box-shadow: 0 6px 15px rgba(230, 140, 0, 0.4);
             border: 2px solid #fff;
         }
-        h2 {
-            color: #3b1402;
-            font-size: 22px;
-            font-weight: 700;
-            margin-bottom: 10px;
-        }
+        h2 { color: #3b1402; font-size: 22px; font-weight: 700; margin-bottom: 10px; }
         .divider-line {
-            width: 60px;
-            height: 3px;
+            width: 60px; height: 3px;
             background: linear-gradient(90deg, transparent, #ff8c00, transparent);
             margin: 0 auto 15px auto;
         }
-        p {
-            color: #555555;
-            margin-bottom: 20px;
-            font-size: 14px;
-            line-height: 1.5;
-        }
+        p { color: #555555; margin-bottom: 20px; font-size: 14px; line-height: 1.5; }
         input[type="text"] {
-            width: 100%;
-            padding: 14px 16px;
-            margin-bottom: 15px;
-            border: 2px solid #e2d6c8;
-            background: #ffffff;
-            border-radius: 10px;
-            font-size: 14px;
-            color: #333;
-            text-align: center;
-            transition: all 0.3s ease;
+            width: 100%; padding: 14px 16px; margin-bottom: 15px;
+            border: 2px solid #e2d6c8; background: #ffffff;
+            border-radius: 10px; font-size: 14px; color: #333;
+            text-align: center; transition: all 0.3s ease;
         }
         input[type="text"]:focus {
-            outline: none;
-            border-color: #ff8c00;
+            outline: none; border-color: #ff8c00;
             box-shadow: 0 0 10px rgba(255, 140, 0, 0.25);
         }
-        .btn-group {
-            display: flex;
-            gap: 10px;
-        }
+        .btn-group { display: flex; gap: 10px; }
         button {
             background: linear-gradient(135deg, #ff8c00 0%, #cc3300 100%);
-            color: white;
-            border: none;
-            padding: 14px 16px;
-            width: 100%;
-            border-radius: 10px;
-            font-size: 15px;
-            font-weight: 700;
-            cursor: pointer;
+            color: white; border: none; padding: 14px 16px; width: 100%;
+            border-radius: 10px; font-size: 15px; font-weight: 700; cursor: pointer;
             box-shadow: 0 4px 15px rgba(204, 51, 0, 0.3);
-            transition: transform 0.1s ease, box-shadow 0.2s ease;
         }
         button.secondary {
             background: linear-gradient(135deg, #0073e6 0%, #00438a 100%);
             box-shadow: 0 4px 15px rgba(0, 115, 230, 0.3);
         }
         button:active { transform: scale(0.98); }
-        .footer-credit {
-            font-size: 12px;
-            color: #886040;
-            font-weight: 600;
-            margin-top: 10px;
-        }
+        .footer-credit { font-size: 12px; color: #886040; font-weight: 600; margin-top: 10px; }
     </style>
 </head>
 <body>
-
     <div class="main-container">
-        <!-- TOOL 1: Playlist CSV Exporter -->
         <div class="card">
             <div class="sacred-emblem">🪷</div>
             <h2>Playlist Schedule Exporter</h2>
             <div class="divider-line"></div>
             <p>Paste a YouTube Playlist ID or URL to download your complete lectures checklist as a clean CSV spreadsheet.</p>
-            
             <form action="/generate-playlist" method="POST">
                 <input type="text" name="playlist_id" placeholder="Paste Playlist ID or URL..." required autocomplete="off">
                 <button type="submit">Download Playlist CSV</button>
             </form>
         </div>
 
-        <!-- TOOL 2: Single Video Transcript Downloader -->
         <div class="card" style="margin-bottom: 0;">
             <div class="sacred-emblem" style="background: linear-gradient(135deg, #0073e6, #00bfff);">📜</div>
             <h2>Video Transcript Downloader</h2>
             <div class="divider-line" style="background: linear-gradient(90deg, transparent, #0073e6, transparent);"></div>
             <p>Extract formatted timestamps and text for any individual lecture video.</p>
-            
             <form action="/generate-transcript" method="POST">
                 <input type="text" name="video_input" placeholder="Paste Video ID or URL..." required autocomplete="off">
                 <div class="btn-group">
@@ -247,7 +200,6 @@ HTML_TEMPLATE = """
             <div class="footer-credit">Hare Krishna | Serving the Community</div>
         </div>
     </div>
-
 </body>
 </html>
 """
@@ -299,68 +251,57 @@ def generate_transcript():
     if not video_id:
         return "Video ID or URL is required", 400
 
+    video_url = f"https://www.youtube.com/watch?v={video_id}"
+    
+    # Configure yt-dlp to extract subtitles metadata without downloading media
+    ydl_opts = {
+        'skip_download': True,
+        'writesubtitles': True,
+        'writeautomaticsub': True,
+        'subtitleslangs': [lang, 'en', 'hi'],
+    }
+
+    subtitles_data = None
     try:
-        watch_url = f"https://www.youtube.com/watch?v={video_id}"
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Accept-Language": "en-US,en;q=0.9,hi;q=0.8"
-        }
-        resp = requests.get(watch_url, headers=headers, timeout=15)
-        if resp.status_code != 200:
-            raise Exception("Could not reach YouTube video page.")
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(video_url, download=False)
+            
+            # Check requested language subtitles first, then automatic captions
+            subs = info.get('requested_subtitles') or info.get('subtitles') or info.get('automatic_captions')
+            
+            if subs:
+                # Find best matching subtitle JSON format url
+                target_sub = None
+                if lang in subs:
+                    target_sub = subs[lang]
+                else:
+                    for k in subs:
+                        if subs[k]:
+                            target_sub = subs[k]
+                            break
+                
+                if target_sub:
+                    # yt-dlp provides formats like 'json3' or 'vtt'
+                    formats = target_sub if isinstance(target_sub, list) else [target_sub]
+                    sub_url = None
+                    for fmt in formats:
+                        if fmt.get('ext') == 'json3':
+                            sub_url = fmt.get('url')
+                            break
+                    if not sub_url and formats:
+                        sub_url = formats[0].get('url')
+
+                    if sub_url:
+                        sub_resp = requests.get(sub_url, timeout=15)
+                        if sub_resp.status_code == 200:
+                            subtitles_data = sub_resp.json()
+
+        if not subtitles_data or 'events' not in subtitles_data:
+            raise Exception("No subtitle events found.")
+
+        events = subtitles_data.get('events', [])
+        output_lines = [f"--- YOUTUBE VIDEO TRANSCRIPT ({lang.upper()}) ---"]
         
-        html_content = resp.text
-        caption_tracks = []
-        
-        if '"captions":' in html_content:
-            try:
-                marker = '"captionTracks":'
-                pos = html_content.find(marker)
-                if pos != -1:
-                    start_idx = pos + len(marker)
-                    bracket_count = 0
-                    end_idx = start_idx
-                    for i, char in enumerate(html_content[start_idx:]):
-                        if char == '[':
-                            bracket_count += 1
-                        elif char == ']':
-                            bracket_count -= 1
-                            if bracket_count == 0:
-                                end_idx = start_idx + i + 1
-                                break
-                    tracks_json = json.loads(html_content[start_idx:end_idx])
-                    for track in tracks_json:
-                        caption_tracks.append({
-                            'url': track.get('baseUrl'),
-                            'lang': track.get('languageCode')
-                        })
-            except Exception:
-                pass
-
-        if not caption_tracks:
-            raise Exception("No caption tracks found.")
-
-        selected_url = None
-        selected_lang_code = lang
-        for track in caption_tracks:
-            if track['lang'] == lang:
-                selected_url = track['url']
-                break
-        if not selected_url and caption_tracks:
-            selected_url = caption_tracks[0]['url']
-            selected_lang_code = caption_tracks[0]['lang']
-
-        if '&fmt=json3' not in selected_url:
-            selected_url += '&fmt=json3'
-
-        transcript_resp = requests.get(selected_url, headers=headers, timeout=15)
-        if transcript_resp.status_code != 200:
-            raise Exception("Failed to download caption contents.")
-
-        transcript_data = transcript_resp.json()
-        events = transcript_data.get('events', [])
-
-        output_lines = [f"--- YOUTUBE VIDEO TRANSCRIPT ({selected_lang_code.upper()}) ---"]
         for event in events:
             if 'segs' in event:
                 start_ms = event.get('tStartMs', 0)
@@ -374,12 +315,11 @@ def generate_transcript():
                     output_lines.append(f"{timestamp_str} {text_chunk}")
 
         if len(output_lines) <= 1:
-            raise Exception("Empty transcript data found.")
+            raise Exception("Empty transcript parsed.")
 
         final_text = "\n".join(output_lines)
-        
         response = make_response(final_text)
-        response.headers["Content-Disposition"] = f"attachment; filename=\"Transcript_{video_id}_{selected_lang_code}.txt\""
+        response.headers["Content-Disposition"] = f"attachment; filename=\"Transcript_{video_id}_{lang}.txt\""
         response.headers["Content-Type"] = "text/plain; charset=utf-8"
         return response
 
@@ -387,7 +327,7 @@ def generate_transcript():
         return render_template_string("""
             <body style="font-family:sans-serif; text-align:center; padding:50px; background:#fffdf9;">
                 <h2 style="color:#b30000;">No captions found for this video.</h2>
-                <p style="color:#555;">YouTube does not have closed captions available or blocked access for this specific video ID.</p>
+                <p style="color:#555;">YouTube closed captions or auto-generated transcripts could not be extracted for this video ID.</p>
                 <a href="/" style="display:inline-block; margin-top:20px; padding:10px 20px; background:#ff8c00; color:#fff; text-decoration:none; border-radius:8px;">Back to Home</a>
             </body>
         """), 404
