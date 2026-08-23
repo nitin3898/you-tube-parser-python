@@ -2,6 +2,7 @@ import os
 import io
 import csv
 import re
+import json
 import requests
 from flask import Flask, request, render_template_string, make_response
 
@@ -251,58 +252,100 @@ def generate_transcript():
         return "Video ID or URL is required", 400
 
     try:
-        piped_url = f"https://pipedapi.kavin.rocks/streams/{video_id}"
-        headers = {"User-Agent": "Mozilla/5.0"}
-        resp = requests.get(piped_url, headers=headers, timeout=15)
-        
+        # Fetch web page with full desktop headers to extract embedded ytInitialPlayerResponse
+        watch_url = f"https://www.youtube.com/watch?v={video_id}"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            "Accept-Language": "en-US,en;q=0.9"
+        }
+        resp = requests.get(watch_url, headers=headers, timeout=15)
         if resp.status_code != 200:
-            raise Exception("Could not reach Piped API.")
-            
-        data = resp.json()
-        subtitles = data.get("subtitles", [])
+            raise Exception("Failed to load watch page.")
+
+        html = resp.text
         
-        target_sub_url = None
-        selected_lang_code = lang
-        
-        for sub in subtitles:
-            if sub.get("code") == lang:
-                target_sub_url = sub.get("url")
+        # Extract json player config block
+        json_data = None
+        marker = "ytInitialPlayerResponse = "
+        pos = html.find(marker)
+        if pos != -1:
+            start = pos + len(marker)
+            # Find matching ending semicolon or bracket balance
+            brace_count = 0
+            end = start
+            for i, char in enumerate(html[start:]):
+                if char == '{':
+                    brace_count += 1
+                elif char == '}':
+                    brace_count -= 1
+                    if brace_count == 0:
+                        end = start + i + 1
+                        break
+            try:
+                json_data = json.loads(html[start:end])
+            except Exception:
+                pass
+
+        if not json_data:
+            # Fallback regex extraction
+            match = re.search(r'ytInitialPlayerResponse\s*=\s*({.+?});', html)
+            if match:
+                try:
+                    json_data = json.loads(match.group(1))
+                except Exception:
+                    pass
+
+        if not json_data:
+            raise Exception("Could not parse player configuration.")
+
+        captions = json_data.get("captions", {}).get("playerCaptionsTracklistRenderer", {}).get("captionTracks", [])
+        if not captions:
+            raise Exception("No captions found in player response.")
+
+        # Match language
+        sub_url = None
+        selected_lang = lang
+        for track in captions:
+            if track.get("languageCode") == lang:
+                sub_url = track.get("baseUrl")
                 break
-                
-        if not target_sub_url and subtitles:
-            target_sub_url = subtitles[0].get("url")
-            selected_lang_code = subtitles[0].get("code", lang)
+        
+        if not sub_url and captions:
+            sub_url = captions[0].get("baseUrl")
+            selected_lang = captions[0].get("languageCode", lang)
 
-        if not target_sub_url:
-            raise Exception("No subtitles found via Piped API.")
+        if not sub_url:
+            raise Exception("No valid caption URL.")
 
-        sub_resp = requests.get(target_sub_url, headers=headers, timeout=15)
+        if "&fmt=json3" not in sub_url:
+            sub_url += "&fmt=json3"
+
+        sub_resp = requests.get(sub_url, headers=headers, timeout=15)
         if sub_resp.status_code != 200:
-            raise Exception("Failed to download subtitle file content.")
+            raise Exception("Failed to download caption payload.")
 
-        vtt_text = sub_resp.text
-        
-        output_lines = [f"--- YOUTUBE VIDEO TRANSCRIPT ({selected_lang_code.upper()}) ---"]
-        seen_lines = set()
-        
-        for line in vtt_text.splitlines():
-            line = line.strip()
-            if "-->" in line:
-                continue
-            if line.startswith("WEBVTT") or line.isdigit() or not line:
-                continue
-            
-            clean_line = re.sub(r'<[^>]+>', '', line)
-            if clean_line and clean_line not in seen_lines:
-                seen_lines.add(clean_line)
-                output_lines.append(clean_line)
+        sub_json = sub_resp.json()
+        events = sub_json.get("events", [])
+
+        output_lines = [f"--- YOUTUBE VIDEO TRANSCRIPT ({selected_lang.upper()}) ---"]
+        for event in events:
+            if "segs" in event:
+                start_ms = event.get("tStartMs", 0)
+                total_sec = int(start_ms) // 1000
+                m = total_sec // 60
+                s = total_sec % 60
+                time_str = f"[{m:02d}:{s:02d}]"
+                
+                text_chunk = "".join([seg.get("utf8", "") for seg in event["segs"]]).strip()
+                if text_chunk and text_chunk != "\n":
+                    output_lines.append(f"{time_str} {text_chunk}")
 
         if len(output_lines) <= 1:
-            raise Exception("Empty transcript parsed.")
+            raise Exception("Empty transcript data.")
 
         final_text = "\n".join(output_lines)
         response = make_response(final_text)
-        response.headers["Content-Disposition"] = f"attachment; filename=\"Transcript_{video_id}_{selected_lang_code}.txt\""
+        response.headers["Content-Disposition"] = f"attachment; filename=\"Transcript_{video_id}_{selected_lang}.txt\""
         response.headers["Content-Type"] = "text/plain; charset=utf-8"
         return response
 
@@ -310,7 +353,7 @@ def generate_transcript():
         return render_template_string("""
             <body style="font-family:sans-serif; text-align:center; padding:50px; background:#fffdf9;">
                 <h2 style="color:#b30000;">No captions found for this video.</h2>
-                <p style="color:#555;">Captions could not be retrieved for this video ID.</p>
+                <p style="color:#555;">YouTube closed captions or transcripts could not be extracted for this video ID.</p>
                 <a href="/" style="display:inline-block; margin-top:20px; padding:10px 20px; background:#ff8c00; color:#fff; text-decoration:none; border-radius:8px;">Back to Home</a>
             </body>
         """), 404
