@@ -4,7 +4,6 @@ import csv
 import re
 import requests
 from flask import Flask, request, render_template_string, make_response
-import yt_dlp
 
 app = Flask(__name__)
 
@@ -252,7 +251,6 @@ def generate_transcript():
         return "Video ID or URL is required", 400
 
     try:
-        # Use a reliable public Piped API instance to fetch captions cleanly without bot checks
         piped_url = f"https://pipedapi.kavin.rocks/streams/{video_id}"
         headers = {"User-Agent": "Mozilla/5.0"}
         resp = requests.get(piped_url, headers=headers, timeout=15)
@@ -266,13 +264,11 @@ def generate_transcript():
         target_sub_url = None
         selected_lang_code = lang
         
-        # Look for matching language subtitle
         for sub in subtitles:
             if sub.get("code") == lang:
                 target_sub_url = sub.get("url")
                 break
                 
-        # Fallback to any available subtitle if preferred language isn't found
         if not target_sub_url and subtitles:
             target_sub_url = subtitles[0].get("url")
             selected_lang_code = subtitles[0].get("code", lang)
@@ -280,26 +276,22 @@ def generate_transcript():
         if not target_sub_url:
             raise Exception("No subtitles found via Piped API.")
 
-        # Download the subtitle file (usually in VTT format)
         sub_resp = requests.get(target_sub_url, headers=headers, timeout=15)
         if sub_resp.status_code != 200:
             raise Exception("Failed to download subtitle file content.")
 
         vtt_text = sub_resp.text
         
-        # Parse VTT format into clean timestamps and text lines
         output_lines = [f"--- YOUTUBE VIDEO TRANSCRIPT ({selected_lang_code.upper()}) ---"]
         seen_lines = set()
         
         for line in vtt_text.splitlines():
             line = line.strip()
-            # VTT timestamps look like "00:01.000 --> 00:04.000" or contain formatting tags
             if "-->" in line:
                 continue
             if line.startswith("WEBVTT") or line.isdigit() or not line:
                 continue
             
-            # Clean HTML-like tags if present
             clean_line = re.sub(r'<[^>]+>', '', line)
             if clean_line and clean_line not in seen_lines:
                 seen_lines.add(clean_line)
@@ -322,6 +314,7 @@ def generate_transcript():
                 <a href="/" style="display:inline-block; margin-top:20px; padding:10px 20px; background:#ff8c00; color:#fff; text-decoration:none; border-radius:8px;">Back to Home</a>
             </body>
         """), 404
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
