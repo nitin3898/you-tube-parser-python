@@ -252,40 +252,79 @@ def generate_transcript():
         return "Video ID or URL is required", 400
 
     try:
-        ytt_api = YouTubeTranscriptApi()
-        try:
-            transcript_list = ytt_api.fetch(video_id, languages=[lang, 'en', 'hi'])
-        except Exception:
-            available = ytt_api.list(video_id)
-            transcript_obj = available.find_transcript([lang, 'en', 'hi'])
-            transcript_list = transcript_obj.fetch()
+        # Use public Piped API instances which are not blocked by YouTube's cloud restrictions
+        proxy_apis = [
+            f"https://pipedapi.kavin.rocks/streams/{video_id}",
+            f"https://pipedapi.privacy.com.de/streams/{video_id}",
+            f"https://api.piped.privacydev.net/streams/{video_id}"
+        ]
         
-        output_lines = [f"--- YOUTUBE VIDEO TRANSCRIPT ({lang.upper()}) ---"]
-        for entry in transcript_list:
-            start_val = entry.get("start", 0) if isinstance(entry, dict) else getattr(entry, "start", 0)
-            text_val = entry.get("text", "") if isinstance(entry, dict) else getattr(entry, "text", "")
+        data = None
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+        
+        for api_url in proxy_apis:
+            try:
+                resp = requests.get(api_url, headers=headers, timeout=10)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    break
+            except Exception:
+                continue
+
+        if not data:
+            raise Exception("All proxy API instances failed to connect.")
+
+        subtitles = data.get("subtitles", [])
+        target_sub_url = None
+        selected_lang_code = lang
+        
+        # Match preferred language (Hindi/English)
+        for sub in subtitles:
+            if sub.get("code") == lang:
+                target_sub_url = sub.get("url")
+                break
+                
+        # Fallback to any available subtitle track
+        if not target_sub_url and subtitles:
+            target_sub_url = subtitles[0].get("url")
+            selected_lang_code = subtitles[0].get("code", lang)
+
+        if not target_sub_url:
+            raise Exception("No caption tracks available for this video via proxy.")
+
+        sub_resp = requests.get(target_sub_url, headers=headers, timeout=10)
+        if sub_resp.status_code != 200:
+            raise Exception("Failed to download subtitle data.")
+
+        vtt_text = sub_resp.text
+        output_lines = [f"--- YOUTUBE VIDEO TRANSCRIPT ({selected_lang_code.upper()}) ---"]
+        seen_lines = set()
+        
+        # Parse standard WebVTT / SRT subtitle format cleanly
+        for line in vtt_text.splitlines():
+            line = line.strip()
+            if "-->" in line or line.startswith("WEBVTT") or line.isdigit() or not line:
+                continue
             
-            total_sec = int(start_val)
-            m = total_sec // 60
-            s = total_sec % 60
-            time_str = f"[{m:02d}:{s:02d}]"
-            text_chunk = text_val.replace("\n", " ")
-            if text_chunk:
-                output_lines.append(f"{time_str} {text_chunk}")
+            # Remove VTT formatting tags
+            clean_line = re.sub(r'<[^>]+>', '', line)
+            if clean_line and clean_line not in seen_lines:
+                seen_lines.add(clean_line)
+                output_lines.append(clean_line)
 
         if len(output_lines) <= 1:
-            raise Exception("Empty transcript returned.")
+            raise Exception("Parsed transcript was empty.")
 
         final_text = "\n".join(output_lines)
         response = make_response(final_text)
-        response.headers["Content-Disposition"] = f"attachment; filename=\"Transcript_{video_id}_{lang}.txt\""
+        response.headers["Content-Disposition"] = f"attachment; filename=\"Transcript_{video_id}_{selected_lang_code}.txt\""
         response.headers["Content-Type"] = "text/plain; charset=utf-8"
         return response
 
     except Exception as e:
         return render_template_string(f"""
             <body style="font-family:sans-serif; text-align:center; padding:50px; background:#fffdf9;">
-                <h2 style="color:#b30000;">No captions found for this video.</h2>
+                <h2 style="color:#b30000;">Transcript Retrieval Failed</h2>
                 <p style="color:#555;">Details: {str(e)}</p>
                 <a href="/" style="display:inline-block; margin-top:20px; padding:10px 20px; background:#ff8c00; color:#fff; text-decoration:none; border-radius:8px;">Back to Home</a>
             </body>
