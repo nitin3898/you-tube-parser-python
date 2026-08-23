@@ -242,6 +242,8 @@ def generate_playlist():
     response.headers["Content-Type"] = "text/csv; charset=utf-8"
     return response
 
+from youtube_transcript_api import YouTubeTranscriptApi
+
 @app.route("/generate-transcript", methods=["POST"])
 def generate_transcript():
     raw_input = request.form.get("video_input", "").strip()
@@ -252,108 +254,30 @@ def generate_transcript():
         return "Video ID or URL is required", 400
 
     try:
-        # Fetch web page with full desktop headers to extract embedded ytInitialPlayerResponse
-        watch_url = f"https://www.youtube.com/watch?v={video_id}"
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-            "Accept-Language": "en-US,en;q=0.9"
-        }
-        resp = requests.get(watch_url, headers=headers, timeout=15)
-        if resp.status_code != 200:
-            raise Exception("Failed to load watch page.")
+        # Fetch transcript segments cleanly using the specialized library
+        transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=[lang, 'en', 'hi'])
 
-        html = resp.text
-        
-        # Extract json player config block
-        json_data = None
-        marker = "ytInitialPlayerResponse = "
-        pos = html.find(marker)
-        if pos != -1:
-            start = pos + len(marker)
-            # Find matching ending semicolon or bracket balance
-            brace_count = 0
-            end = start
-            for i, char in enumerate(html[start:]):
-                if char == '{':
-                    brace_count += 1
-                elif char == '}':
-                    brace_count -= 1
-                    if brace_count == 0:
-                        end = start + i + 1
-                        break
-            try:
-                json_data = json.loads(html[start:end])
-            except Exception:
-                pass
-
-        if not json_data:
-            # Fallback regex extraction
-            match = re.search(r'ytInitialPlayerResponse\s*=\s*({.+?});', html)
-            if match:
-                try:
-                    json_data = json.loads(match.group(1))
-                except Exception:
-                    pass
-
-        if not json_data:
-            raise Exception("Could not parse player configuration.")
-
-        captions = json_data.get("captions", {}).get("playerCaptionsTracklistRenderer", {}).get("captionTracks", [])
-        if not captions:
-            raise Exception("No captions found in player response.")
-
-        # Match language
-        sub_url = None
-        selected_lang = lang
-        for track in captions:
-            if track.get("languageCode") == lang:
-                sub_url = track.get("baseUrl")
-                break
-        
-        if not sub_url and captions:
-            sub_url = captions[0].get("baseUrl")
-            selected_lang = captions[0].get("languageCode", lang)
-
-        if not sub_url:
-            raise Exception("No valid caption URL.")
-
-        if "&fmt=json3" not in sub_url:
-            sub_url += "&fmt=json3"
-
-        sub_resp = requests.get(sub_url, headers=headers, timeout=15)
-        if sub_resp.status_code != 200:
-            raise Exception("Failed to download caption payload.")
-
-        sub_json = sub_resp.json()
-        events = sub_json.get("events", [])
-
-        output_lines = [f"--- YOUTUBE VIDEO TRANSCRIPT ({selected_lang.upper()}) ---"]
-        for event in events:
-            if "segs" in event:
-                start_ms = event.get("tStartMs", 0)
-                total_sec = int(start_ms) // 1000
-                m = total_sec // 60
-                s = total_sec % 60
-                time_str = f"[{m:02d}:{s:02d}]"
-                
-                text_chunk = "".join([seg.get("utf8", "") for seg in event["segs"]]).strip()
-                if text_chunk and text_chunk != "\n":
-                    output_lines.append(f"{time_str} {text_chunk}")
-
-        if len(output_lines) <= 1:
-            raise Exception("Empty transcript data.")
+        output_lines = [f"--- YOUTUBE VIDEO TRANSCRIPT ({lang.upper()}) ---"]
+        for entry in transcript_list:
+            total_sec = int(entry.get("start", 0))
+            m = total_sec // 60
+            s = total_sec % 60
+            time_str = f"[{m:02d}:{s:02d}]"
+            text_chunk = entry.get("text", "").replace("\n", " ")
+            if text_chunk:
+                output_lines.append(f"{time_str} {text_chunk}")
 
         final_text = "\n".join(output_lines)
         response = make_response(final_text)
-        response.headers["Content-Disposition"] = f"attachment; filename=\"Transcript_{video_id}_{selected_lang}.txt\""
+        response.headers["Content-Disposition"] = f"attachment; filename=\"Transcript_{video_id}_{lang}.txt\""
         response.headers["Content-Type"] = "text/plain; charset=utf-8"
         return response
 
-    except Exception:
-        return render_template_string("""
+    except Exception as e:
+        return render_template_string(f"""
             <body style="font-family:sans-serif; text-align:center; padding:50px; background:#fffdf9;">
                 <h2 style="color:#b30000;">No captions found for this video.</h2>
-                <p style="color:#555;">YouTube closed captions or transcripts could not be extracted for this video ID.</p>
+                <p style="color:#555;">Error detail: {str(e)}</p>
                 <a href="/" style="display:inline-block; margin-top:20px; padding:10px 20px; background:#ff8c00; color:#fff; text-decoration:none; border-radius:8px;">Back to Home</a>
             </body>
         """), 404
