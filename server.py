@@ -4,7 +4,6 @@ import csv
 import re
 import requests
 from flask import Flask, request, render_template_string, make_response
-from youtube_transcript_api import YouTubeTranscriptApi
 
 app = Flask(__name__)
 
