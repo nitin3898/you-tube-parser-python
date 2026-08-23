@@ -2,9 +2,9 @@ import os
 import io
 import csv
 import re
-import json
 import requests
 from flask import Flask, request, render_template_string, make_response
+from youtube_transcript_api import YouTubeTranscriptApi
 
 app = Flask(__name__)
 
@@ -242,8 +242,6 @@ def generate_playlist():
     response.headers["Content-Type"] = "text/csv; charset=utf-8"
     return response
 
-from youtube_transcript_api import YouTubeTranscriptApi
-
 @app.route("/generate-transcript", methods=["POST"])
 def generate_transcript():
     raw_input = request.form.get("video_input", "").strip()
@@ -254,18 +252,29 @@ def generate_transcript():
         return "Video ID or URL is required", 400
 
     try:
-        # Fetch transcript segments cleanly using the specialized library
-        transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=[lang, 'en', 'hi'])
-
+        ytt_api = YouTubeTranscriptApi()
+        try:
+            transcript_list = ytt_api.fetch(video_id, languages=[lang, 'en', 'hi'])
+        except Exception:
+            available = ytt_api.list(video_id)
+            transcript_obj = available.find_transcript([lang, 'en', 'hi'])
+            transcript_list = transcript_obj.fetch()
+        
         output_lines = [f"--- YOUTUBE VIDEO TRANSCRIPT ({lang.upper()}) ---"]
         for entry in transcript_list:
-            total_sec = int(entry.get("start", 0))
+            start_val = entry.get("start", 0) if isinstance(entry, dict) else getattr(entry, "start", 0)
+            text_val = entry.get("text", "") if isinstance(entry, dict) else getattr(entry, "text", "")
+            
+            total_sec = int(start_val)
             m = total_sec // 60
             s = total_sec % 60
             time_str = f"[{m:02d}:{s:02d}]"
-            text_chunk = entry.get("text", "").replace("\n", " ")
+            text_chunk = text_val.replace("\n", " ")
             if text_chunk:
                 output_lines.append(f"{time_str} {text_chunk}")
+
+        if len(output_lines) <= 1:
+            raise Exception("Empty transcript returned.")
 
         final_text = "\n".join(output_lines)
         response = make_response(final_text)
@@ -277,7 +286,7 @@ def generate_transcript():
         return render_template_string(f"""
             <body style="font-family:sans-serif; text-align:center; padding:50px; background:#fffdf9;">
                 <h2 style="color:#b30000;">No captions found for this video.</h2>
-                <p style="color:#555;">Error detail: {str(e)}</p>
+                <p style="color:#555;">Details: {str(e)}</p>
                 <a href="/" style="display:inline-block; margin-top:20px; padding:10px 20px; background:#ff8c00; color:#fff; text-decoration:none; border-radius:8px;">Back to Home</a>
             </body>
         """), 404
