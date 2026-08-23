@@ -251,11 +251,14 @@ def generate_transcript():
         return "Video ID or URL is required", 400
 
     try:
-        # Use public Piped API instances which are not blocked by YouTube's cloud restrictions
+        # Expanded pool of active public Piped API instances
         proxy_apis = [
             f"https://pipedapi.kavin.rocks/streams/{video_id}",
-            f"https://pipedapi.privacy.com.de/streams/{video_id}",
-            f"https://api.piped.privacydev.net/streams/{video_id}"
+            f"https://pipedapi.leptons.xyz/streams/{video_id}",
+            f"https://piped-api.privacy.com.de/streams/{video_id}",
+            f"https://pipedapi.adminforge.de/streams/{video_id}",
+            f"https://api.piped.yt/streams/{video_id}",
+            f"https://api.piped.private.coffee/streams/{video_id}"
         ]
         
         data = None
@@ -263,7 +266,7 @@ def generate_transcript():
         
         for api_url in proxy_apis:
             try:
-                resp = requests.get(api_url, headers=headers, timeout=10)
+                resp = requests.get(api_url, headers=headers, timeout=8)
                 if resp.status_code == 200:
                     data = resp.json()
                     break
@@ -271,48 +274,44 @@ def generate_transcript():
                 continue
 
         if not data:
-            raise Exception("All proxy API instances failed to connect.")
+            raise Exception("All public proxy instances are currently busy or offline.")
 
         subtitles = data.get("subtitles", [])
         target_sub_url = None
         selected_lang_code = lang
         
-        # Match preferred language (Hindi/English)
         for sub in subtitles:
             if sub.get("code") == lang:
                 target_sub_url = sub.get("url")
                 break
                 
-        # Fallback to any available subtitle track
         if not target_sub_url and subtitles:
             target_sub_url = subtitles[0].get("url")
             selected_lang_code = subtitles[0].get("code", lang)
 
         if not target_sub_url:
-            raise Exception("No caption tracks available for this video via proxy.")
+            raise Exception("This video does not have available caption tracks.")
 
-        sub_resp = requests.get(target_sub_url, headers=headers, timeout=10)
+        sub_resp = requests.get(target_sub_url, headers=headers, timeout=8)
         if sub_resp.status_code != 200:
-            raise Exception("Failed to download subtitle data.")
+            raise Exception("Failed to download the subtitle payload file.")
 
         vtt_text = sub_resp.text
         output_lines = [f"--- YOUTUBE VIDEO TRANSCRIPT ({selected_lang_code.upper()}) ---"]
         seen_lines = set()
         
-        # Parse standard WebVTT / SRT subtitle format cleanly
         for line in vtt_text.splitlines():
             line = line.strip()
             if "-->" in line or line.startswith("WEBVTT") or line.isdigit() or not line:
                 continue
             
-            # Remove VTT formatting tags
             clean_line = re.sub(r'<[^>]+>', '', line)
             if clean_line and clean_line not in seen_lines:
                 seen_lines.add(clean_line)
                 output_lines.append(clean_line)
 
         if len(output_lines) <= 1:
-            raise Exception("Parsed transcript was empty.")
+            raise Exception("The extracted transcript file came back empty.")
 
         final_text = "\n".join(output_lines)
         response = make_response(final_text)
